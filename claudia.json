@@ -1,0 +1,10 @@
+{
+  "lambda": {
+    "role": "envs-bot-executor",
+    "name": "envs-bot",
+    "region": "eu-west-1"
+  },
+  "api": {
+    "id": "8cklpcgfu8"
+  }
+}
