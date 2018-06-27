@@ -12,8 +12,8 @@ app.use(bodyParser.json());
 AWS.config.update({region: 'eu-west-1'});
 const Envs = dynamoose.model('envs_bot', { env: String, project: String, user: String })
 
-const isAdmin = (from) => from.mention_name === 'CarlosAlbertoCastaño' || from.mention_name === 'GeronimoDiPierro'
-const getUserName = (from) => from.name
+const isAdmin = (name) => name === 'paola.cucurullo' || name === 'carlos.castano'
+const getUserName = (from) => from.name || from
 const getAction = (message = '') => _.get(message.split(' '), '[1]', '').trim()
 const getEnvironment = (message = '') => _.get(message.split(' '), '[2]', '').trim()
 
@@ -22,22 +22,27 @@ const getDBEnvValues = async () => {
     return envsList
 }
 
-app.post('/user-message', async (req, res) => {
-    const {message, from} = req.body.item.message
-
+async function hipchatThread(message, from, html) {
     const action = getAction(message)
+    console.log('action:',action)
     let respMessage = ''
 
     if (action === 'add') {
+        const envsList = _.mapValues(_.groupBy(await getDBEnvValues(), 'env'), (item) => item[0])
         const environmentName = getEnvironment(message).toUpperCase()
         const environmentObj = new Envs({env: environmentName, project: 'MFO', user: null});
+
+        if (envsList[environmentName]) {
+            respMessage = 'Cabrón!'
+            return;
+        }
 
         await environmentObj.save()
 
         respMessage = 'Añadido!'
     }
 
-    else if (action === 'remove' && isAdmin(from)) {
+    else if (action === 'remove' && isAdmin(getUserName(from))) {
         const environmentName = getEnvironment(message).toUpperCase()
         const environmentObj = new Envs({env: environmentName, project: 'MFO', user: null});
 
@@ -65,12 +70,13 @@ app.post('/user-message', async (req, res) => {
 
         else {
             await Envs.update({env: environment}, {user: null})
-            respMessage = `Gracias por avisar! ${environment} ahora está disponible para otra persona!`
+            respMessage = `Gracias por avisar! ${environment} ahora está disponible!`
         }
     }
 
     else if (action === 'use') {
         const userName = getUserName(from)
+        console.log('userName:',userName)
         const environment = getEnvironment(message).toUpperCase()
         const envsList = _.mapValues(_.groupBy(await getDBEnvValues(), 'env'), (item) => item[0])
 
@@ -88,34 +94,78 @@ app.post('/user-message', async (req, res) => {
 
         else {
             await Envs.update({env: environment}, {user: userName})
-            respMessage = `${environment} está disponible! úsalo, pero avísame cuando ya no lo necesites con /env free ${environment}`
+            respMessage = `${environment} está disponible! úsalo, pero avísame cuando ya no lo necesites`
         }
     }
 
     else {
-        const envsList = await getDBEnvValues()
-        const envsListStr = envsList.map(envData => `<li><b>${envData.env}</b>: ${envData.user ? envData.user : '<i>Disponible</i>'}</li>`).join('')
+        const envsList = _.sortBy(await getDBEnvValues(), 'env')
+        let maxEnvStrLength = _.max(envsList.map((item) => item.env.length)) + 2
 
-        respMessage = `Lista actual de entornos:
+        if (html) {
+            const envsListStr = envsList.map(envData => `&nbsp;&nbsp;&nbsp<b>${_.padEnd(envData.env, maxEnvStrLength, '.')}</b> ${envData.user ? envData.user : '<i>Disponible</i>'}<br/>`).join('')
+
+            respMessage = `Lista actual de entornos:
         <br/>
-        <ul>
-            ${envsListStr}
-        </ul>
-        <pre>/env            // Muestra esta información
+        <pre>${envsListStr}
+/env            // Muestra esta información
 /env add ENV    // Agrega un entorno
 /env remove ENV // Elimina un entorno
 /env use ENV    // Para usar un entorno
-/env free ENV   // Para liberar un entorno</pre><br/>`
-    }
+/env free ENV   // Para liberar un entorno</pre>`
+        } else {
+            const envsListStr = envsList.map(envData => `*${envData.env}* => ${envData.user ? envData.user : 'Disponible'}`).join('\n')
+            respMessage = `Lista actual de entornos:
 
-    const url = 'https://optivamedia.hipchat.com/v2/room/4624043/notification?auth_token=Y8Xt4ilMEtTo7x7DlqvAUualOmNPsi414kAAZhOg'
-    request.post(url, {
+${envsListStr}
+            `
+        }
+    }
+    return respMessage
+}
+
+async function sendResponseHipchat(response) {
+    const url = process.env.HIPCHAT_ROOM_URL
+    await request.post(url, {
         form: {
             color: "green",
-            message: respMessage,
-            notify: true
+            message: response
         }
     })
+}
+
+async function sendResponseSlack(response, url) {
+    const payload = {
+        text: response,
+        /*"attachments": [
+            {
+                "text":"Partly cloudy today and tomorrow"
+            }
+        ]*/
+    }
+    await request.post({
+        url,
+        json: true,
+        body: payload
+    })
+}
+
+app.post('/user-message', async (req, res) => {
+    console.log('BODY:', req.body)
+    if (req.body.item) {
+        const {message, from} = req.body.item.message
+        const response = await hipchatThread(message, from, true)
+        await sendResponseHipchat(response)
+    }
+
+    else if (req.body.response_url) {
+        const {command, text, user_name} = req.body
+        console.log(text, user_name)
+        const response = await hipchatThread(command + ' ' + text, user_name)
+        console.log('response:*',response)
+        const url = req.body.response_url
+        await sendResponseSlack(response, url)
+    }
 });
 
 module.exports = app;

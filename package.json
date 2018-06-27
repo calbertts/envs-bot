@@ -4,11 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "AWS_PROFILE=claudia_deployer claudia test-lambda",
+    "test": "claudia test-lambda",
     "start": "node app.local.js",
-    "build": "AWS_PROFILE=claudia_deployer claudia generate-serverless-express-proxy --express-module app",
-    "create": "AWS_PROFILE=claudia_deployer claudia create --handler lambda.handler --deploy-proxy-api --region eu-west-1",
-    "update": "AWS_PROFILE=claudia_deployer claudia update",
+    "build": "claudia generate-serverless-express-proxy --express-module app",
+    "create": "claudia create --handler lambda.handler --deploy-proxy-api --region eu-west-1",
+    "update": "claudia update",
     "upload": "git add .; git commit --amend --no-edit; git push -f"
   },
   "repository": {
@@ -23,7 +23,7 @@
   "homepage": "https://github.com/calbertts/envs-bot#readme",
   "dependencies": {
     "aws-sdk": "^2.250.1",
-    "aws-serverless-express": "^3.2.0",
+    "aws-serverless-express": "^3.3.5",
     "body-parser": "^1.18.3",
     "dynamoose": "^0.8.7",
     "express": "^4.16.3",
